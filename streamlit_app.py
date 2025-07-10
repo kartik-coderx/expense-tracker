@@ -1,24 +1,48 @@
 import streamlit as st
-from utils import add_expense, read_expenses
+import pandas as pd
+import os
 
-st.set_page_config(page_title="Expense Tracker", page_icon="💰")
-st.title("💸 Expense Tracker Web App")
+st.set_page_config(page_title="Expense Tracker", layout="centered")
+st.title("📊 Personal Expense Tracker")
 
-# Input Form
-st.subheader("Add New Expense")
-with st.form("expense_form"):
-    category = st.selectbox("Category", ["Food", "Travel", "Shopping", "Others"])
-    amount = st.number_input("Amount", min_value=0.0, step=1.0)
-    note = st.text_input("Note (optional)")
-    submitted = st.form_submit_button("Add Expense")
-    if submitted:
-        add_expense(category, amount, note)
-        st.success("Expense added successfully!")
+# User input
+username = st.text_input("Enter your name:")
 
-# Display Table
-st.subheader("📋 All Expenses")
-expenses = read_expenses()
-if expenses:
-    st.dataframe(expenses, use_container_width=True)
-else:
-    st.info("No expenses added yet.")
+if username:
+    os.makedirs("data", exist_ok=True)
+    filename = f"data/expenses_{username.lower()}.csv"
+
+    # Load existing data
+    if os.path.exists(filename):
+        df = pd.read_csv(filename)
+    else:
+        df = pd.DataFrame(columns=["Date", "Category", "Amount", "Description"])
+
+    # Add new expense
+    st.subheader("➕ Add Expense")
+    with st.form("form"):
+        date = st.date_input("Date")
+        category = st.selectbox("Category", ["Food", "Travel", "Shopping", "Bills", "Others"])
+        amount = st.number_input("Amount", min_value=0.0)
+        description = st.text_input("Description")
+        add = st.form_submit_button("Add")
+
+    if add:
+        new_data = pd.DataFrame([{
+            "Date": date,
+            "Category": category,
+            "Amount": amount,
+            "Description": description
+        }])
+        df = pd.concat([df, new_data], ignore_index=True)
+        df.to_csv(filename, index=False)
+        st.success("Expense added!")
+
+    # Show expense table
+    st.subheader("📜 Your Expenses")
+    st.dataframe(df)
+
+    # Summary
+    if not df.empty:
+        st.subheader("📈 Summary")
+        st.write("Total Spent: ₹", df["Amount"].sum())
