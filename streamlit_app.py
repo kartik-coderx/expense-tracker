@@ -104,10 +104,14 @@ if "page" not in st.session_state:
 if "user" not in st.session_state:
     st.session_state.user = None
 
+if "next_clicked" not in st.session_state:
+    st.session_state.next_clicked = False
+
 st.set_page_config(page_title="Expense Tracker", layout="centered")
 
 # ---------- Home Page ----------
 if st.session_state.page == "home":
+    st.session_state.next_clicked = False  # reset next click flag
     st.title("Expense Tracker")
     st.write(
         """
@@ -119,7 +123,8 @@ if st.session_state.page == "home":
         """
     )
     st.write("")
-    if st.button("Next"):
+    if st.button("Aage badho (Next)") and not st.session_state.next_clicked:
+        st.session_state.next_clicked = True
         st.session_state.page = "auth"
         st.stop()
 
@@ -209,12 +214,12 @@ elif st.session_state.page == "dashboard":
                         if st.button("Update", key=f"update_{row['id']}"):
                             update_expense(row['id'], new_date.isoformat(), new_category, float(new_amount), new_note)
                             st.success("Expense updated")
-                            st.experimental_rerun()
+                            st.stop()  # <-- safe re-render
                     with col_del:
                         if st.button("Delete", key=f"delete_{row['id']}"):
                             delete_expense(row['id'])
                             st.warning("Expense deleted")
-                            st.experimental_rerun()
+                            st.stop()  # <-- safe re-render
 
         # export
         if not df.empty:
