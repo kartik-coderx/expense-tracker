@@ -1,6 +1,6 @@
 # Local database
-expense_tracker.db
-
+expenses.db
+__pycache__/
 # Python cache
 __pycache__/
 *.pyc
