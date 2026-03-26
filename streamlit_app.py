@@ -1,4 +1,6 @@
 import streamlit as st
+from database import init_db, get_connection
+from utils import add_expense as add_expense_public, read_expenses
 import sqlite3
 import hashlib
 from datetime import datetime
@@ -6,36 +8,11 @@ import pandas as pd
 import plotly.express as px
 
 # ---------------- Database Config ----------------
-DB_PATH = "expense_tracker.db"
-
 
 def get_conn():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+    return get_connection()
 
-
-def init_db():
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        username TEXT PRIMARY KEY,
-        password_hash TEXT NOT NULL,
-        created_at TEXT
-    )
-    """)
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS expenses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT,
-        date TEXT,
-        category TEXT,
-        amount REAL,
-        note TEXT
-    )
-    """)
-    conn.commit()
-    conn.close()
-
+init_db()
 
 import bcrypt
 
@@ -52,18 +29,28 @@ def verify_password(password: str, stored_hash: str):
 
 # ---------------- Auth Helpers ----------------
 def register_user(username: str, password: str):
+    if not username or not password:
+        return False, "Username and password are required"
+
     conn = get_conn()
     c = conn.cursor()
     c.execute("SELECT username FROM users WHERE username = ?", (username,))
     if c.fetchone():
         conn.close()
         return False, "Username already exists"
+
     pw_hash = hash_password(password)
     created_at = datetime.now().isoformat()
-    c.execute("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-              (username, pw_hash, created_at))
-    conn.commit()
-    conn.close()
+    try:
+        c.execute("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                  (username, pw_hash, created_at))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return False, "Username already exists"
+    finally:
+        conn.close()
+
     return True, "User registered successfully"
 
 
@@ -81,7 +68,7 @@ def verify_user(username: str, password: str):
 
 # ---------------- Expense Helpers ----------------
 
-def add_expense(username, date, category, amount, note):
+def add_user_expense(username, date, category, amount, note):
     conn = get_conn()
     c = conn.cursor()
     c.execute("INSERT INTO expenses (username, date, category, amount, note) VALUES (?, ?, ?, ?, ?)",
@@ -217,7 +204,7 @@ elif st.session_state.page == "dashboard":
             amount = st.number_input("Amount", min_value=0.0, format="%f")
             note = st.text_input("Note")
         if st.button("Add Expense", use_container_width=True):
-            add_expense(st.session_state.user, date.isoformat(), category, float(amount), note)
+            add_user_expense(st.session_state.user, date.isoformat(), category, float(amount), note)
             st.success("Expense added")
             st.rerun()
 
@@ -261,8 +248,42 @@ elif st.session_state.page == "dashboard":
                         st.warning("Deleted")
                         st.rerun()
 
-        csv = df.to_csv(index=False)
-        st.download_button("Download data as CSV", csv, file_name=f"expenses_{st.session_state.user}.csv")
+        # ---- Export Data ----
+        st.subheader("📥 Download")
+        
+        # Excel Export with proper formatting
+        try:
+            import openpyxl
+            from io import BytesIO
+            
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df[["date", "category", "amount", "note"]].to_excel(writer, sheet_name='Expenses', index=False)
+                
+                # Auto-fit columns
+                worksheet = writer.sheets['Expenses']
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            excel_data = output.getvalue()
+            st.download_button(
+                label="📊 Download as Excel File",
+                data=excel_data,
+                file_name=f"expenses_{st.session_state.user}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        except ImportError:
+            st.error("Excel export requires: pip install openpyxl")
 
 else:
     st.info("Unknown page. Returning to home.")

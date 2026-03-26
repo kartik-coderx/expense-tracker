@@ -1,39 +1,42 @@
+from database import init_db
 from utils import add_expense, read_expenses
 
 def main():
+    print("Initializing DB...")
+    init_db()
+    print("DB Ready ✅")
     while True:
-        print("\n===== Expense Tracker =====")
+        print("\n==== Expense Tracker ====")
         print("1. Add Expense")
         print("2. View Expenses")
         print("3. Exit")
 
-        choice = input("Enter your choice: ")
+        choice = input("Enter choice: ")
 
-        if choice == '1':
-            category = input("Enter category (e.g., food, travel): ")
-            amount = input("Enter amount: ")
-            note = input("Enter note (optional): ")
+        if choice == "1":
+            category = input("Category: ")
+            amount = input("Amount: ")
+            note = input("Note: ")
+
             add_expense(category, amount, note)
-            print("✅ Expense added!")
+            print("✅ Saved successfully!")
 
-        elif choice == '2':
+        elif choice == "2":
             expenses = read_expenses()
+
             if not expenses:
-                print("📭 No expenses found!")
+                print("❌ No data found")
             else:
-                print("\n{:<12} {:<12} {:<8} {:<20}".format("Date", "Category", "Amount", "Note"))#{:<12}means left aligned with 12 spaces
-                print("-" * 60)
+                print("\nDate       Category     Amount     Note")
+                print("-------------------------------------------")
                 for e in expenses:
-                    print("{:<12} {:<12} {:<8} {:<20}".format(e[0], e[1], e[2], e[3]))
+                    print(f"{e[0]:<10} {e[1]:<12} {e[2]:<10} {e[3]}")
 
-
-
-        elif choice == '3':
-            print("👋 Exiting... Goodbye!")
+        elif choice == "3":
             break
 
         else:
-            print("❌ Invalid choice. Try again.")
+            print("Invalid choice")
 
 if __name__ == "__main__":
     main()

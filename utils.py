@@ -1,18 +1,27 @@
-import csv
+from database import get_connection
 from datetime import datetime
 
-# Save an expense
 def add_expense(category, amount, note):
-    with open('expenses.csv', mode='a', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow([datetime.now().strftime('%Y-%m-%d'), category , amount, note])
+    conn = get_connection()
+    cursor = conn.cursor()
 
-# Read all expenses
+    date = datetime.now().strftime("%Y-%m-%d")
+
+    cursor.execute(
+        "INSERT INTO expenses (date, category, amount, note) VALUES (?, ?, ?, ?)",
+        (date, category, float(amount), note)
+    )
+
+    conn.commit()   # 🔥 VERY IMPORTANT
+    conn.close()
+
+
 def read_expenses():
-    expenses = []
-    with open('expenses.csv', mode='r') as file:
-        reader = csv.reader(file)
-        next(reader)  # skip header
-        for row in reader:
-            expenses.append(row)
-    return expenses
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT date, category, amount, note FROM expenses")
+    data = cursor.fetchall()
+
+    conn.close()
+    return data
