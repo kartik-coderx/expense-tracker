@@ -3,6 +3,7 @@ from database import init_db, get_connection
 from utils import add_expense as add_expense_public, read_expenses
 import sqlite3
 import hashlib
+import re
 from datetime import datetime
 import pandas as pd
 import plotly.express as px
@@ -28,13 +29,18 @@ def verify_password(password: str, stored_hash: str):
         return False
 
 # ---------------- Auth Helpers ----------------
+def normalize_username(username: str) -> str:
+    return username.strip().lower() if username else username
+
+
 def register_user(username: str, password: str):
+    username = normalize_username(username)
     if not username or not password:
         return False, "Username and password are required"
 
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT username FROM users WHERE username = ?", (username,))
+    c.execute("SELECT username FROM users WHERE username = ? COLLATE NOCASE", (username,))
     if c.fetchone():
         conn.close()
         return False, "Username already exists"
@@ -55,9 +61,10 @@ def register_user(username: str, password: str):
 
 
 def verify_user(username: str, password: str):
+    username = normalize_username(username)
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
+    c.execute("SELECT password_hash FROM users WHERE username = ? COLLATE NOCASE", (username,))
     row = c.fetchone()
     conn.close()
     if not row:
@@ -66,9 +73,20 @@ def verify_user(username: str, password: str):
     return verify_password(password, stored_hash)
 
 
+def validate_registration_password(password: str):
+    if not re.search(r"[A-Z]", password):
+        return False, "Password must include at least one uppercase letter."
+    if not re.search(r"\d", password):
+        return False, "Password must include at least one number."
+    if not re.search(r"[!@#$%^&*()_+\-=[\]{};:'\",.<>/?|\\]", password):
+        return False, "Password must include at least one special character."
+    return True, ""
+
+
 # ---------------- Expense Helpers ----------------
 
 def add_user_expense(username, date, category, amount, note):
+    username = normalize_username(username)
     conn = get_conn()
     c = conn.cursor()
     c.execute("INSERT INTO expenses (username, date, category, amount, note) VALUES (?, ?, ?, ?, ?)",
@@ -78,9 +96,10 @@ def add_user_expense(username, date, category, amount, note):
 
 
 def get_expenses_for_user(username):
+    username = normalize_username(username)
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT id, date, category, amount, note FROM expenses WHERE username = ? ORDER BY date DESC", (username,))
+    c.execute("SELECT id, date, category, amount, note FROM expenses WHERE username = ? COLLATE NOCASE ORDER BY date DESC", (username,))
     rows = c.fetchall()
     conn.close()
     df = pd.DataFrame(rows, columns=["id", "date", "category", "amount", "note"]) if rows else pd.DataFrame(columns=["id", "date", "category", "amount", "note"])
@@ -113,6 +132,10 @@ if "page" not in st.session_state:
     st.session_state.page = "home"
 if "user" not in st.session_state:
     st.session_state.user = None
+if "auth_mode" not in st.session_state:
+    st.session_state.auth_mode = "login"
+if "auth_message" not in st.session_state:
+    st.session_state.auth_message = ""
 
 
 # ---------------- Page Config ----------------
@@ -125,44 +148,65 @@ if st.session_state.page == "home":
     st.write("")
     if st.button("Get Started →", use_container_width=True):
         st.session_state.page = "auth"
+        st.session_state.auth_mode = "login"
+        st.session_state.auth_message = ""
         st.rerun()
 
 
 # ---------------- Auth Page ----------------
 elif st.session_state.page == "auth":
-    st.header("Login / Register")
-    tab1, tab2 = st.tabs(["Login", "Register"])
+    if st.session_state.auth_mode == "login":
+        st.header("Login")
+        if st.session_state.auth_message:
+            st.success(st.session_state.auth_message)
 
-    with tab1:
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        if st.button("Login"):
+        username = st.text_input("Username", key="login_only_username")
+        password = st.text_input("Password", type="password", key="login_only_password")
+        if st.button("Login", key="login_only_button"):
+            username = normalize_username(username)
             if verify_user(username, password):
                 st.session_state.user = username
                 st.session_state.page = "dashboard"
+                st.session_state.auth_message = ""
                 st.rerun()
             else:
                 st.error("Invalid username or password")
 
-    with tab2:
-        new_user = st.text_input("Choose a username")
-        new_pass = st.text_input("Choose a password", type="password")
-        confirm_pass = st.text_input("Confirm password", type="password")
-        if st.button("Register"):
+        st.write("")
+        if st.button("Create a new account", key="go_to_register_button"):
+            st.session_state.auth_mode = "register"
+            st.session_state.auth_message = ""
+            st.rerun()
+
+    elif st.session_state.auth_mode == "register":
+        st.header("Register")
+        new_user = st.text_input("Create a username", key="register_username")
+        new_pass = st.text_input("Create a password", type="password", key="register_password")
+        confirm_pass = st.text_input("Confirm password", type="password", key="register_confirm")
+        if st.button("Register", key="register_button"):
+            new_user = normalize_username(new_user)
             if not new_user or not new_pass:
                 st.error("Username and password required")
             elif new_pass != confirm_pass:
                 st.error("Passwords do not match")
             else:
-                ok, msg = register_user(new_user, new_pass)
-                if ok:
-                    st.success(msg)
+                valid, validation_msg = validate_registration_password(new_pass)
+                if not valid:
+                    st.error(validation_msg)
                 else:
-                    st.error(msg)
+                    ok, msg = register_user(new_user, new_pass)
+                    if ok:
+                        st.session_state.auth_mode = "login"
+                        st.session_state.auth_message = "Registration successful. Please log in."
+                        st.rerun()
+                    else:
+                        st.error(msg)
 
-    if st.button("← Back", use_container_width=True):
-        st.session_state.page = "home"
-        st.rerun()
+        st.write("")
+        if st.button("Already have an account? Log in", key="back_to_login_button"):
+            st.session_state.auth_mode = "login"
+            st.session_state.auth_message = ""
+            st.rerun()
 
 
 # ---------------- Dashboard ----------------
@@ -171,6 +215,8 @@ elif st.session_state.page == "dashboard":
         st.warning("Please login first")
         if st.button("Go to login"):
             st.session_state.page = "auth"
+            st.session_state.auth_mode = "login"
+            st.session_state.auth_message = ""
             st.rerun()
 
     st.markdown(f"<h2>Welcome, {st.session_state.user}</h2>", unsafe_allow_html=True)
